@@ -43,15 +43,32 @@ def preprocess_data(
     """
     # Handle missing values
     #data = data.dropna()
-    
+
+    # Resolve column names case-insensitively so 'Fill'/'fill' and 'Cup'/'cup'
+    # both work regardless of how the CSV is capitalized.
+    lookup = {c.lower(): c for c in data.columns}
+
+    def _col(name: str) -> str:
+        key = name.lower()
+        if key not in lookup:
+            raise KeyError(
+                f"column '{name}' not found in data; available columns include: "
+                f"{list(data.columns)[:5]}..."
+            )
+        return lookup[key]
+
+    target_col = _col(target_column)
+    cup_col = _col('cup')
+    duration_col = _col('duration_s')
+
     # Separate features and target
-    X = data.drop(columns=[target_column, 'Cup'])
-    X.drop(columns=["duration_s"], inplace=True)
+    X = data.drop(columns=[target_col, cup_col])
+    X.drop(columns=[duration_col], inplace=True)
     X.drop(X.columns[X.nunique() < 2], axis=1, inplace=True)
 
-    y = data[target_column]
+    y = data[target_col]
 
-    cup_labels = data['Cup']
+    cup_labels = data[cup_col]
     return X, y, cup_labels, X.columns.tolist()
     
 def encode_target_to_classes(y):
@@ -79,6 +96,46 @@ def split_data_by_cup(X : pd.DataFrame ,y_encoded, cup_labels, cup_number):
     y_train = y_encoded[~mask]
 
     return X_train, X_test, y_train, y_test
+
+def split_data_with_indices(X: pd.DataFrame, y_encoded, test_size: float = 0.2, random_state: int = 42):
+    """
+    Same as split_data, but also returns the original row indices for the
+    train and test sets so downstream code can map test rows back to the CSV.
+
+    Returns:
+    --------
+    tuple
+        (X_train, X_test, y_train, y_test, train_idx, test_idx)
+        where train_idx / test_idx are positional row indices into X.
+    """
+    indices = np.arange(len(X))
+    (X_train, X_test, y_train, y_test, train_idx, test_idx) = train_test_split(
+        X, y_encoded, indices,
+        test_size=test_size, random_state=random_state,
+        stratify=y_encoded, shuffle=True,
+    )
+    print(f"Training set: {X_train.shape[0]} samples")
+    print(f"Test set: {X_test.shape[0]} samples")
+    print(f"Classes: {np.unique(y_encoded)}")
+    return X_train, X_test, y_train, y_test, np.asarray(train_idx), np.asarray(test_idx)
+
+
+def split_data_by_cup_with_indices(X: pd.DataFrame, y_encoded, cup_labels, cup_number):
+    """
+    Same as split_data_by_cup (leave-one-cup-out), but also returns the
+    original positional row indices for the train and test sets.
+    """
+    cup_labels = np.asarray(cup_labels)
+    indices = np.arange(len(X))
+    mask = cup_labels == cup_number
+    X_test = X[mask]
+    X_train = X[~mask]
+    y_test = y_encoded[mask]
+    y_train = y_encoded[~mask]
+    test_idx = indices[mask]
+    train_idx = indices[~mask]
+    return X_train, X_test, y_train, y_test, train_idx, test_idx
+
 
 def scale_features(
     X_train: pd.DataFrame | np.ndarray, 

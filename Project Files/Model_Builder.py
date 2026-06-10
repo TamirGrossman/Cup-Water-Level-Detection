@@ -83,7 +83,7 @@ def build_randomforest(
         )
     return model_Forest
 
-#TODO: adapt both feature selection function to new structure (model agnostic)
+
 def forward_feature_selection(
     X_train: np.ndarray,
     y_train: np.ndarray,
@@ -94,6 +94,7 @@ def forward_feature_selection(
     max_features: int | None = None,
     cv: int = 5,
     scoring: str = 'accuracy',
+    initial_features: list[str] = [],
     min_improvement: float = 1e-6,
     verbose: bool = True,
 ) -> tuple[list[int], list[str], list[dict[str, object]]]:
@@ -147,8 +148,8 @@ def forward_feature_selection(
     target = n_features if max_features is None else min(max_features, n_features)
     cv_splitter = StratifiedKFold(n_splits=cv, shuffle=True, random_state=random_state)
 
-    selected: list[int] = []
-    remaining: list[int] = list(range(n_features))
+    selected: list[int] = [feature_names.index(feature) for feature in initial_features]
+    remaining: list[int] = [i for i in range(n_features) if i not in selected] #list(range(n_features))
     history: list[dict[str, object]] = []
     best_score = -np.inf
 
