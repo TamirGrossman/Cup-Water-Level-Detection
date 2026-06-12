@@ -1,3 +1,4 @@
+from matplotlib.patches import Patch
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
@@ -128,7 +129,10 @@ def graph_flow_rate(flow_results: dict, figsize: tuple = (13, 5)):
     # (2) Scatter: predicted vs true per sample, with y = x diagonal
     true_v = per_sample["true_flow_rate_mL_s"]
     pred_v = per_sample["pred_flow_rate_mL_s"]
-    sc = ax2.scatter(true_v, pred_v, c=per_sample["cup"], cmap="viridis",
+    cups = sorted(per_sample["cup"].unique())
+    cmap = plt.get_cmap("viridis")
+    norm = plt.Normalize(vmin=min(cups), vmax=max(cups))
+    sc = ax2.scatter(true_v, pred_v, c=per_sample["cup"], cmap=cmap, norm=norm,
                      alpha=0.8, edgecolor="k", linewidth=0.3)
     lo = float(min(true_v.min(), pred_v.min()))
     hi = float(max(true_v.max(), pred_v.max()))
@@ -138,10 +142,16 @@ def graph_flow_rate(flow_results: dict, figsize: tuple = (13, 5)):
     ax2.set_xlabel("True flow rate (mL/s)")
     ax2.set_ylabel("Predicted flow rate (mL/s)")
     ax2.set_title("Predicted vs True Flow Rate (per sample)")
-    ax2.legend()
     ax2.grid(linestyle="--", alpha=0.4)
-    cbar = fig.colorbar(sc, ax=ax2, ticks=sorted(per_sample["cup"].unique()))
-    cbar.set_label("Cup")
+
+    # Legend: y = x line plus one swatch per cup (same style as left legend)
+    cup_handles = [
+        Patch(facecolor=cmap(norm(c)), edgecolor="k", linewidth=0.3,
+              label=f"Cup {c}")
+        for c in cups
+    ]
+    handles, _ = ax2.get_legend_handles_labels()
+    ax2.legend(handles=handles + cup_handles)
 
     plt.tight_layout()
     plt.show()

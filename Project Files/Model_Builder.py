@@ -1,7 +1,8 @@
 from typing import Any, Callable
-
 import pandas as pd
 import numpy as np
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 import xgboost as xgb
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import cross_val_score, StratifiedKFold, GridSearchCV
@@ -85,8 +86,8 @@ def build_randomforest(
 
 
 def forward_feature_selection(
-    X_train: np.ndarray,
-    y_train: np.ndarray,
+    X_train: pd.DataFrame,
+    y_train: pd.DataFrame,
     feature_names: list[str],
     model_params: dict[str, Any], 
     build_model: Callable,  
@@ -157,6 +158,13 @@ def forward_feature_selection(
         print(f"\nForward Feature Selection (wrapper, {cv}-fold CV, scoring='{scoring}')")
         print(f"Candidate features: {n_features} | target N': {target}")
 
+    model = build_model(**model_params, random_state = random_state)
+
+    pipe = Pipeline([
+    ("scaler", StandardScaler()),
+    ("model", model)
+    ])
+
     while remaining and len(selected) < target:
         round_best_score = -np.inf
         round_best_feat: int | None = None
@@ -164,9 +172,8 @@ def forward_feature_selection(
         # Try adding each remaining feature on top of the current set.
         for feat in remaining:
             trial = selected + [feat]
-            model = build_model(**model_params, random_state = random_state)
             scores = cross_val_score(
-                model, X_train[:, trial], y_train,
+                pipe, X_train.iloc[:, trial], y_train,
                 cv=cv_splitter, scoring=scoring, n_jobs=5,
             )
             mean_score = float(scores.mean())
@@ -436,9 +443,19 @@ def tune_hyperparameters(
               f"= {n_combos * cv} fits")
         print(f"{'='*60}")
 
+    pipe = Pipeline([
+    ("scaler", StandardScaler()),
+    ("model", model)
+    ])
+
+    pipe_param_grid = {
+        (key if key.startswith("model__") else f"model__{key}"): values
+        for key, values in param_grid.items()
+    }
+
     search = GridSearchCV(
-        estimator=model,
-        param_grid=param_grid,
+        estimator=pipe,
+        param_grid=pipe_param_grid,
         scoring=scoring,
         cv=cv_splitter,
         n_jobs=-1,
@@ -446,7 +463,10 @@ def tune_hyperparameters(
     )
     search.fit(X, y)
 
-    best_params = dict(search.best_params_)
+    best_params = best_params = {
+        key.replace("model__", "", 1): value
+        for key, value in search.best_params_.items()
+    }
     best_score = float(search.best_score_)
 
     if verbose:

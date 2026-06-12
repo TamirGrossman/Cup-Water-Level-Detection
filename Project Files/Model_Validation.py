@@ -1,10 +1,11 @@
 import numpy as np
+import pandas as pd
 from sklearn.model_selection import cross_val_score, cross_validate, StratifiedKFold, StratifiedGroupKFold
 from Model_Builder import build_xgb
 from sklearn.ensemble import RandomForestClassifier
 import xgboost as xgb
 
-def cross_validate_model(  
+def cross_validate_model_old(  
     model: xgb.XGBClassifier | RandomForestClassifier, 
     X: np.ndarray,
     y: np.ndarray,
@@ -72,6 +73,94 @@ def cross_validate_model(
 
     return results
 
+from sklearn.base import clone
+from sklearn.metrics import get_scorer
+from Data_Loader import scale_features
+
+def cross_validate_model(
+    model: xgb.XGBClassifier | RandomForestClassifier,
+    X: pd.DataFrame,
+    y: np.ndarray,
+    random_state: int = 42,
+    cv: int = 5,
+    scoring: tuple[str, ...] = ('accuracy', 'f1_macro', 'precision_macro', 'recall_macro'),
+    verbose: bool = True,
+) -> dict[str, object]:
+    """
+    Evaluate the classifier with Stratified k-Fold cross-validation, scaling
+    each fold independently via `scale_features` (scaler is fit on the
+    training fold only, then applied to both train and validation folds, to
+    avoid data leakage).
+
+    Parameters:
+    -----------
+    X : pd.DataFrame
+        Unscaled feature matrix (n_samples, n_features). Scaling is performed
+        per fold inside this function.
+    y : pd.Series
+        Encoded labels.
+    cv : int
+        Number of folds k (default: 5).
+    scoring : tuple of str
+        sklearn scoring metric names to compute across the folds.
+    verbose : bool
+        Print a per-metric summary (mean +/- std and per-fold scores).
+
+    Returns:
+    --------
+    dict
+        {metric: {'scores': np.ndarray, 'mean': float, 'std': float}} for each
+        requested metric.
+    """
+    cv_splitter = StratifiedKFold(n_splits=cv, shuffle=True, random_state=random_state)
+
+    if verbose:
+        print(f"\n{'='*60}")
+        print(f"Stratified {cv}-Fold Cross-Validation (per-fold scaling)")
+        print(f"{'='*60}")
+
+    scorers = {metric: get_scorer(metric) for metric in scoring}
+    fold_scores: dict[str, list[float]] = {metric: [] for metric in scoring}
+
+    # StratifiedKFold.split returns positional indices, so use .iloc
+    for fold_idx, (train_idx, val_idx) in enumerate(cv_splitter.split(X, y), 1):
+        X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
+        y_train, y_val = y[train_idx], y[val_idx]
+
+        # Fit scaler on the training fold only, apply to both splits
+        X_train_scaled, X_val_scaled, _ = scale_features(X_train, X_val)
+
+        fold_model = clone(model)
+        fold_model.fit(X_train_scaled, y_train)
+
+        for metric in scoring:
+            score = scorers[metric](fold_model, X_val_scaled, y_val)
+            fold_scores[metric].append(score)
+
+        if verbose:
+            fold_summary = ", ".join(
+                f"{metric}={fold_scores[metric][-1]:.4f}" for metric in scoring
+            )
+            print(f"Fold {fold_idx}/{cv}: {fold_summary}")
+
+    results = {}
+    for metric in scoring:
+        scores = np.array(fold_scores[metric])
+        results[metric] = {
+            'scores': scores,
+            'mean': float(scores.mean()),
+            'std': float(scores.std()),
+        }
+        if verbose:
+            fold_str = ", ".join(f"{s:.4f}" for s in scores)
+            print(f"{metric:<18}: {scores.mean():.4f} +/- {scores.std():.4f} "
+                  f"(folds: [{fold_str}])")
+
+    if verbose:
+        print(f"{'='*60}")
+
+    return results
+
 def kfold_cv_multiple(model, X, y, k=5, scoring_metrics=None):
     """
     Perform k-fold CV with multiple scoring metrics.
@@ -111,48 +200,3 @@ def kfold_cv_multiple(model, X, y, k=5, scoring_metrics=None):
     
     return results, cv_results
 
-
-# mine - both normal and group kfold
-def crosss_val_model(
-    X: np.ndarray,
-    y: np.ndarray,
-    cup_labels,
-    n_estimators: int = 100,
-    learning_rate: float = 0.1,
-    random_state: int = 42,
-    cv: int = 3,
-    scoring: str = 'accuracy',
-    ):
-
-    cv_splitter = StratifiedGroupKFold(n_splits=cv, shuffle=True, random_state=random_state)
-    model = build_xgb(
-                n_estimators=n_estimators,
-                learning_rate=learning_rate,
-                random_state=random_state,
-                num_class=None,  # let XGBoost infer per fold
-            )
-    scores = cross_val_score(
-        model, X, y,
-        cv=cv_splitter, scoring=scoring, n_jobs=3, groups=cup_labels
-    )
-
-    print('\nStratified Group K-Fold')
-    for fold, score in enumerate(scores):
-        print(f"fold: {fold}, cv score: {score}")
-
-    
-    cv_splitter = StratifiedKFold(n_splits=cv, shuffle=True, random_state=random_state)
-    model = build_xgb(
-                n_estimators=n_estimators,
-                learning_rate=learning_rate,
-                random_state=random_state,
-                num_class=None,  # let XGBoost infer per fold
-            )
-    scores = cross_val_score(
-        model, X, y,
-        cv=cv_splitter, scoring=scoring, n_jobs=3
-    )
-
-    print('\nStratified K-Fold')
-    for fold, score in enumerate(scores):
-        print(f"fold: {fold}, cv score: {score}")
