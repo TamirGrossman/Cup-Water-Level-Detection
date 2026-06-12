@@ -5,7 +5,7 @@ import librosa
 from scipy.signal import find_peaks
 import os
 from typing import Optional
-
+import scipy.signal as sps
 def extract_spectral_features(
     audio_path: str,
     sr: Optional[float] = 64000,
@@ -169,7 +169,7 @@ def save_summary_csv(summaries, csv_path, append=False):
 
 
 # New function
-def analyze_audio_windows(audio_path: str, cup_num: str, fill_label: str, n_windows: int = 10, sr: float = 48000) -> dict:
+def analyze_audio_windows(audio_path: str, cup_num: str, fill_label: str, n_windows: int = 10, sr: float = 48000, low_cut_hz = 270) -> dict:
     """
     Load audio and compute spectral features with temporal dynamics for each window.
     
@@ -198,13 +198,13 @@ def analyze_audio_windows(audio_path: str, cup_num: str, fill_label: str, n_wind
     }
     # Calculate window size in samples
     window_samples = len(y) // n_windows
-    
+
     # Precompute STFT for spectral features
     window_type = "hann"
     S = librosa.stft(y, window=window_type)
     S_abs = np.abs(S)
     freqs = librosa.fft_frequencies(sr=sr)
-    
+
     # Harmonic/Percussive decomposition
     y_harmonic, y_percussive = librosa.effects.hpss(y)
     
@@ -323,6 +323,168 @@ def analyze_audio_windows(audio_path: str, cup_num: str, fill_label: str, n_wind
     return results
 
 
+def analyze_audio_windows_filtered(audio_path: str, cup_num: str, fill_label: str, n_windows: int = 10,
+                          sr: float = 48000, low_cut_hz: float = 270.0, hp_order: int = 6) -> dict:
+    """
+    Load audio and compute spectral features with temporal dynamics for each window,
+    filtering out frequencies below low_cut_hz.
+    """
+    # Load audio file
+    y, sr = librosa.load(audio_path, sr=sr)
+    duration = librosa.get_duration(y=y, sr=sr)
+
+    # Apply zero-phase Butterworth high-pass filter to remove frequencies below low_cut_hz
+    sos = sps.butter(hp_order, low_cut_hz, btype="highpass", fs=sr, output="sos")
+    y = sps.sosfiltfilt(sos, y)
+
+    results: dict = {
+        "duration_s": round(duration, 4),
+        "Cup": cup_num,
+        "Fill": fill_label
+    }
+
+    # Calculate window size in samples
+    window_samples = len(y) // n_windows
+
+    # Precompute STFT for spectral features (use explicit n_fft and hop_length for consistent mapping)
+    n_fft = 2048
+    hop_length = 512
+    window_type = "hann"
+    S = librosa.stft(y, n_fft=n_fft, hop_length=hop_length, window=window_type)
+    S_abs = np.abs(S)
+    freqs = librosa.fft_frequencies(sr=sr, n_fft=n_fft)
+
+    # Zero out STFT bins below low_cut_hz (extra safety)
+    low_bin_mask = freqs < low_cut_hz
+    if np.any(low_bin_mask):
+        S_abs[low_bin_mask, :] = 0.0
+
+    # Harmonic/Percussive decomposition (operate on filtered waveform)
+    y_harmonic, y_percussive = librosa.effects.hpss(y)
+
+    # Onset detection (across entire filtered signal for context)
+    onset_frames = librosa.onset.onset_detect(y=y, sr=sr)
+    onset_times = librosa.frames_to_time(onset_frames, sr=sr, hop_length=hop_length, n_fft=n_fft)
+
+    prev_spectral_centroid = None
+    prev_rms_energy = None
+
+    for i in range(n_windows):
+        start_idx = i * window_samples
+        end_idx = start_idx + window_samples if i < n_windows - 1 else len(y)
+
+        window_audio = y[start_idx:end_idx]
+        window_harmonic = y_harmonic[start_idx:end_idx]
+        window_percussive = y_percussive[start_idx:end_idx]
+
+        # Time bounds
+        start_time = start_idx / sr
+        end_time = end_idx / sr
+
+        # === Original Features (note: spectral features computed on filtered audio) ===
+        spectral_centroid = np.mean(librosa.feature.spectral_centroid(y=window_audio, sr=sr, window=window_type))
+        spectral_rolloff = np.mean(librosa.feature.spectral_rolloff(y=window_audio, sr=sr, window=window_type))
+        zero_crossing_rate = np.mean(librosa.feature.zero_crossing_rate(window_audio))
+        mfcc = np.mean(librosa.feature.mfcc(y=window_audio, sr=sr, n_mfcc=13), axis=1)
+        rms_energy = np.mean(librosa.feature.rms(y=window_audio)[0])
+        spectral_bandwidth = np.mean(librosa.feature.spectral_bandwidth(y=window_audio, sr=sr, window=window_type))
+
+        # === NEW: Temporal Dynamics (Deltas) ===
+        spectral_centroid_delta = None
+        rms_energy_delta = None
+
+        if prev_spectral_centroid is not None:
+            spectral_centroid_delta = spectral_centroid - prev_spectral_centroid
+            rms_energy_delta = rms_energy - prev_rms_energy
+
+        prev_spectral_centroid = spectral_centroid
+        prev_rms_energy = rms_energy
+
+        # === NEW: Onset Detection in This Window ===
+        onsets_in_window = onset_times[(onset_times >= start_time) & (onset_times < end_time)]
+        onset_count = len(onsets_in_window)
+
+        # Attack time: time from first onset to peak energy
+        attack_time = None
+        if onset_count > 0:
+            frame_energies = librosa.feature.rms(y=window_audio)[0]
+            peak_frame = np.argmax(frame_energies)
+            # Convert peak_frame to seconds within window: librosa.feature.rms uses frames with hop_length
+            peak_time_in_window = (peak_frame * hop_length) / sr
+            attack_time = peak_time_in_window
+
+        # === NEW: Harmonic/Percussive Analysis ===
+        harmonic_ratio = np.mean(librosa.feature.rms(y=window_harmonic)[0]) / (rms_energy + 1e-6)
+        percussive_ratio = np.mean(librosa.feature.rms(y=window_percussive)[0]) / (rms_energy + 1e-6)
+
+        # === NEW: Dominant Frequency Tracking ===
+        # Map audio sample indices to STFT frame indices
+        start_frame = int(np.floor(start_idx / hop_length))
+        end_frame = int(np.ceil(end_idx / hop_length))
+        start_frame = max(0, start_frame)
+        end_frame = min(S_abs.shape[1] - 1, end_frame)
+        if end_frame >= start_frame:
+            S_window = S_abs[:, start_frame:end_frame + 1]
+            # ensure low bins already zeroed; when selecting dominant freq only consider >= low_cut_hz
+            valid_bins = np.where(freqs >= low_cut_hz)[0]
+            if valid_bins.size > 0 and S_window.shape[1] > 0:
+                mag_spectrum = np.mean(S_window[valid_bins, :], axis=1)
+                dom_idx_rel = np.argmax(mag_spectrum)
+                dom_idx = valid_bins[dom_idx_rel]
+                dominant_freq = float(freqs[dom_idx])
+                dominant_freq_magnitude = float(np.max(mag_spectrum))
+            else:
+                dominant_freq = 0.0
+                dominant_freq_magnitude = 0.0
+        else:
+            dominant_freq = 0.0
+            dominant_freq_magnitude = 0.0
+
+        # === NEW: Spectral Peak Distribution ===
+        S_smooth = librosa.feature.melspectrogram(y=window_audio, sr=sr, n_mels=40)
+        spectral_peaks = int(np.sum(librosa.util.peak_pick(np.mean(S_smooth, axis=1),
+                                                           pre_max=3, post_max=3,
+                                                           pre_avg=3, post_avg=3, delta=0.1, wait=5)))
+
+        # === NEW: Temporal Envelope (Attack, Sustain, Release) ===
+        frame_rms = librosa.feature.rms(y=window_audio)[0]
+        max_energy_frame = int(np.argmax(frame_rms)) if frame_rms.size > 0 else 0
+
+        if max_energy_frame > 0 and max_energy_frame < len(frame_rms) - 1:
+            sustain_level = float(np.mean(frame_rms[max_energy_frame:]) / (np.max(frame_rms) + 1e-6))
+        else:
+            sustain_level = 0.0
+
+        # === NEW: Spectral Flatness (tonality measure) ===
+        spectral_flatness = float(np.mean(librosa.feature.spectral_flatness(y=window_audio)))
+
+        features_dict = {
+            'spectral_centroid': float(spectral_centroid),
+            'spectral_rolloff': float(spectral_rolloff),
+            'zero_crossing_rate': float(zero_crossing_rate),
+            'rms_energy': float(rms_energy),
+            'spectral_bandwidth': float(spectral_bandwidth),
+            'spectral_centroid_delta': float(spectral_centroid_delta) if spectral_centroid_delta is not None else 0.0,
+            'rms_energy_delta': float(rms_energy_delta) if rms_energy_delta is not None else 0.0,
+            'onset_count': int(onset_count),
+            'attack_time': float(attack_time) if attack_time is not None else 0.0,
+            'harmonic_ratio': float(harmonic_ratio),
+            'percussive_ratio': float(percussive_ratio),
+            'dominant_frequency': float(dominant_freq),
+            'dominant_frequency_magnitude': float(dominant_freq_magnitude),
+            'spectral_peaks_count': int(spectral_peaks),
+            'spectral_flatness': float(spectral_flatness),
+            'sustain_level': float(sustain_level),
+        }
+
+        for key, value in features_dict.items():
+            results[f'{key}_window_{i}'] = value
+
+        for index, coeff in enumerate(mfcc.tolist()):
+            results[f'MFCC_{index}_window_{i}'] = float(coeff)
+
+    return results
+
 # ── Example usage ─────────────────────────────────────────────────────────────
 if __name__ == "__main__":
 
@@ -334,6 +496,11 @@ if __name__ == "__main__":
             cup_num, fill_perc = tuple(root.split('\\')[-1].split(' - '))
             recordings.append((filepath, cup_num, fill_perc))
     
-    dataset = [analyze_audio_windows(path, cup_num=cup, fill_label=fil, n_windows=5) for path, cup, fil in recordings]
-    #[extract_spectral_features(path, cup_num=cup, fill_label=fil) for path, cup, fil in recordings]
-    save_summary_csv(dataset, "cup_dataset.csv")
+    dataset = [analyze_audio_windows_filtered(path, cup_num=cup, fill_label=fil, n_windows=5) for path, cup, fil in recordings]
+    [extract_spectral_features(path, cup_num=cup, fill_label=fil) for path, cup, fil in recordings]
+
+    save_summary_csv(dataset, "cup_dataset.csv") 
+
+#    dic = analyze_audio_windows_filtered(r'WaterSound - Dataset\Cup 3\3 - 100\Recording number - 140.m4a.mp4', '1', '100', 5)
+#    for i in range(5):
+#        print(i, dic[f'dominant_frequency_window_{i}'])

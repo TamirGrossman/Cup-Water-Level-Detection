@@ -95,7 +95,7 @@ def forward_feature_selection(
     cv: int = 5,
     scoring: str = 'accuracy',
     initial_features: list[str] = [],
-    min_improvement: float = 1e-6,
+    min_improvement: float =0,#1e-6,
     verbose: bool = True,
 ) -> tuple[list[int], list[str], list[dict[str, object]]]:
     """
@@ -334,7 +334,7 @@ def train_classifier(
     model: xgb.XGBClassifier | RandomForestClassifier,
     X_train: np.ndarray, 
     y_train: np.ndarray, 
-    n_estimators: int = 100, 
+    n_estimators: int = 200, 
     model_type: str = "XGBoost",
 ) -> xgb.XGBClassifier | RandomForestClassifier:
     """

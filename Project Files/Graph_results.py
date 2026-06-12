@@ -76,7 +76,7 @@ def plot_feature_impact(X, y, model, top_features, feature_names):
         k_results.append(temp['accuracy']['mean'])
     
     plt.figure()
-    plt.plot([i for i in range(len(feature_names))], k_results, marker='o', linestyle='-')   # line with markers
+    plt.plot([i for i in range(len(feature_names))], k_results, linestyle='-')   # line with markers
     #plt.scatter(a, b, color='red')              # optional: scatter points
     plt.xlabel('number of features')
     plt.ylabel('accuracy')

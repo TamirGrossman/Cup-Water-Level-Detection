@@ -25,7 +25,7 @@ def handle_data(
     
     # F-score of features
     anova_results = anova_f_scores(X,y_encoded)
-    plot_anova_f_scores(anova_results, top_n=20)
+    # plot_anova_f_scores(anova_results, top_n=20)
 
     #Split to train,test (index-aware so test rows can be mapped back to the CSV)
     if not split_by_cup:
@@ -55,7 +55,7 @@ def model_pipeline(
 ) -> dict[str, Any]:
 
     model_options = model_params.copy() # copy of model_params to keep original the same after hyperparameter tunning
-
+    
     # Forward feature selection
     selected_indices: list[int] | None = None
     selected_features = features
@@ -75,6 +75,13 @@ def model_pipeline(
 
     model = build_model(**model_params, random_state= random_state)
     
+    if feature_impact_graph:
+        plot_feature_impact(
+        np.concatenate([X_train_scaled, X_test_scaled], axis=0),
+        np.concatenate([y_train, y_test], axis=0),
+        model,
+        anova_results['feature'].tolist(), features)
+
     best_params: dict[str, int | float] | None = None
     best_tune_score: float | None = None
     if tune:
@@ -87,13 +94,6 @@ def model_pipeline(
         )
         model_options.update(best_params)
         model = build_model(**model_options, random_state= random_state)
-
-    if feature_impact_graph:
-        plot_feature_impact(
-        np.concatenate([X_train_scaled, X_test_scaled], axis=0),
-        np.concatenate([y_train, y_test], axis=0),
-        model,
-        anova_results['feature'].tolist(), features)
     
     # K-Fold cross-validation on the (selected) training data for a robust
     # estimate of generalization performance before committing to final fit.
@@ -160,10 +160,11 @@ xgb_options = {
 }
 
 xgb_tune_grid = {
-            'n_estimators':  [100, 200, 300, 400],
-            'max_depth':     [4, 6, 8, 10],
+            'n_estimators':  [200, 300, 400],
+            'max_depth':     [4, 6, 8],
             'learning_rate': [0.05, 0.1],
-            'subsample':     [0.4, 0.55, 0.6, 0.8, 1.0],
+            'reg_alpha': [0.3, 0.5, 0.7],
+            'reg_lambda': [0.1, 0.3, 0.5]
         }
 
 print('='*60)
@@ -173,87 +174,90 @@ results_XGB = model_pipeline(
     X_train_scaled, X_test_scaled, scaler, y_train, y_test, encoder, features, anova_results,
     xgb_options, build_xgb, model_type= "XGB",
     random_state= 42,
-    use_feature_selection= True, max_features=100, n_initial=15,
+    use_feature_selection= True, max_features=100, n_initial=30,
     run_cross_validation = True, cv = 4,
     tune = True, tune_grid= xgb_tune_grid, tune_cv= 4,
+    feature_impact_graph= False
     )
+# best results: Tune off, FFS on (10 initials) 
+# graph_CM(results_XGB['confusion_matrix'], encoder.classes_.astype('str'))
 
-graph_CM(results_XGB['confusion_matrix'], encoder.classes_.astype('str'))
+# forest_options = {
+#     "n_estimators": 200,
+#     #"criterion": "gini",
+#     "max_depth": 8,
+#     "min_samples_split": 2,
+#     "min_samples_leaf": 1,
+#     #"min_weight_fraction_leaf": 0.0,
+#     "max_features": "log2",
+#    # "max_leaf_nodes": None,
+#    # "min_impurity_decrease": 0.0,
+#     #"bootstrap": True,
+#     #"oob_score": False,
+#     "n_jobs": 3,
+#     "verbosity": 0,
+#    # "warm_start": False,
+#     "class_weight": None,
+#     #"ccp_alpha": 0.0,
+#    # "max_samples": None,
+# }
 
-forest_options = {
-    "n_estimators": 200,
-    #"criterion": "gini",
-    "max_depth": 6,
-    "min_samples_split": 2,
-    "min_samples_leaf": 1,
-    #"min_weight_fraction_leaf": 0.0,
-    "max_features": "sqrt",
-   # "max_leaf_nodes": None,
-   # "min_impurity_decrease": 0.0,
-    #"bootstrap": True,
-    #"oob_score": False,
-    "n_jobs": 3,
-    "verbosity": 0,
-   # "warm_start": False,
-    "class_weight": None,
-    #"ccp_alpha": 0.0,
-   # "max_samples": None,
-}
+# forest_tune_grid = {
+#     'n_estimators': [100, 200, 300],
+#     'max_depth':    [6, 8, 10,],
+#     'max_features': ['sqrt', 'log2'],
+# }
 
-forest_tune_grid = {
-    'n_estimators': [100, 200, 300],
-    'max_depth':    [6, 8, 10, None],
-    'max_features': ['sqrt', 'log2'],
-}
-print('\n')
-print('='*60)
-print("Random Forest")
-print('='*60)
-results_Forest = model_pipeline(
-    X_train_scaled, X_test_scaled, scaler, y_train, y_test, encoder, features, anova_results,
-    forest_options, build_randomforest, model_type="FOREST",
-    random_state= 42,
-    use_feature_selection= True, max_features=100, n_initial= 10,
-    run_cross_validation = True, cv = 4,
-    tune = True, tune_grid= forest_tune_grid, tune_cv= 4
-    )
+# print('\n')
+# print('='*60)
+# print("Random Forest")
+# print('='*60)
+# results_Forest = model_pipeline(
+#     X_train_scaled, X_test_scaled, scaler, y_train, y_test, encoder, features, anova_results,
+#     forest_options, build_randomforest, model_type="FOREST",
+#     random_state= 42,
+#     use_feature_selection= True, max_features=100, n_initial= 25,
+#     run_cross_validation = True, cv = 4,
+#     tune = False, tune_grid= forest_tune_grid, tune_cv= 4,
+#     feature_impact_graph= False
+#     )
 
-graph_CM(results_Forest['confusion_matrix'], encoder.classes_.astype('str'))
+# graph_CM(results_Forest['confusion_matrix'], encoder.classes_.astype('str'))
 
-print('\n')
-print('='*60)
-print("Combined")
-print('='*60)
-XGB_CONST = 0.5
-FORSET_CONST = 0.5
-final_results = get_combined_prediction_results(
-    XGB_CONST, results_XGB['probablities'], 
-    FORSET_CONST, results_Forest['probablities'], 
-    y_test, encoder)
+# print('\n')
+# print('='*60)
+# print("Combined")
+# print('='*60)
+# XGB_CONST = 0.5
+# FORSET_CONST = 0.5
+# final_results = get_combined_prediction_results(
+#     XGB_CONST, results_XGB['probablities'], 
+#     FORSET_CONST, results_Forest['probablities'], 
+#     y_test, encoder)
 
-graph_cv_comparison(
-    {
-        'XGB': results_XGB.get('cv_results'),
-        'Forest': results_Forest.get('cv_results'),
-    },
-    cv_label="Stratified 4-Fold CV",
-)
+# graph_cv_comparison(
+#     {
+#         'XGB': results_XGB.get('cv_results'),
+#         'Forest': results_Forest.get('cv_results'),
+#     },
+#     cv_label="Stratified 4-Fold CV",
+# )
 
 
 # --- Flow rate by REGRESSION: train + tune XGB and RandomForest regressors on
 #     the same test split, pick whichever model+hyperparameters fit best (CV),
 #     and predict the flow rate directly. (No longer derived from the fill
 #     classifier or a formula.) ---
-flow_results = compute_flow_rates(
-    CSV_PATH,
-    test_indices=test_idx,
-    tune=True,
-    cv=4,
-    random_state=42,
-)
-print(f"Flow-rate model chosen: {flow_results['best_model']} "
-      f"(params={flow_results['best_params']}, "
-      f"test R2={flow_results['metrics']['R2']:.4f})")
+# flow_results = compute_flow_rates(
+#     CSV_PATH,
+#     test_indices=test_idx,
+#     tune=True,
+#     cv=4,
+#     random_state=42,
+# )
+# print(f"Flow-rate model chosen: {flow_results['best_model']} "
+#       f"(params={flow_results['best_params']}, "
+#       f"test R2={flow_results['metrics']['R2']:.4f})")
 
-# Flow rate figures: bars (true vs predicted by fill class) + per-sample scatter.
-graph_flow_rate(flow_results)
+# # Flow rate figures: bars (true vs predicted by fill class) + per-sample scatter.
+# graph_flow_rate(flow_results)
