@@ -21,7 +21,7 @@ def handle_data(
 ):
 
     return X_train, X_test, y_train, y_test, encoder, features, anova_results, test_idx
-
+TEST_SIZE = 0.25
 
 def model_pipeline(
     # data
@@ -51,7 +51,7 @@ def model_pipeline(
 
     #Split to train,test (index-aware so test rows can be mapped back to the CSV)
     if not split_by_cup:
-        X_train, X_test, y_train, y_test = split_data(X, y_encoded, test_size=0.2)
+        X_train, X_test, y_train, y_test = split_data(X, y_encoded, test_size=TEST_SIZE)
     else:
         X_train, X_test, y_train, y_test = split_data_by_cup(X, y_encoded, cup_labels, cup_number=cup_number)
 
@@ -175,7 +175,7 @@ results_XGB = model_pipeline(
     X, y_encoded, features, anova_results,
     xgb_options, build_xgb, model_type= "XGB",
     random_state= 42,
-    use_feature_selection= True, max_features=140, n_initial=69
+    use_feature_selection= True, max_features=140, n_initial=46,
     run_cross_validation = True, cv = 4,
     tune = True, tune_grid= xgb_tune_grid, tune_cv= 4,
     feature_impact_graph= False
@@ -217,7 +217,7 @@ results_Forest = model_pipeline(
     X, y, features, anova_results,
     forest_options, build_randomforest, model_type="FOREST",
     random_state= 42,
-    use_feature_selection= False, max_features=100, n_initial= 11,
+    use_feature_selection= True, max_features=100, n_initial= 46,
     run_cross_validation = True, cv = 4,
     tune = True, tune_grid= forest_tune_grid, tune_cv= 4,
     feature_impact_graph= False
@@ -226,7 +226,7 @@ results_Forest = model_pipeline(
 graph_CM(results_Forest['confusion_matrix'], encoder.classes_.astype('str'), 'RandomForest')
 
 if not split_by_cup:
-        X_train, X_test, y_train, y_test, train_idx, test_idx = split_data_with_indices(X, y_encoded, test_size=0.2)
+        X_train, X_test, y_train, y_test, train_idx, test_idx = split_data_with_indices(X, y_encoded, test_size=TEST_SIZE)
 else:
     X_train, X_test, y_train, y_test, train_idx, test_idx = split_data_by_cup_with_indices(X, y_encoded, cup_labels, cup_number=cup_number)
 X_train, X_test, _ = scale_features(X_train, X_test)
@@ -263,9 +263,9 @@ X_raw = _df.drop(columns=[_lk['fill'], _lk['cup'], _lk['duration_s']])
 X_raw = X_raw.drop(columns=X_raw.columns[X_raw.nunique() < 2])
 y_raw = LabelEncoder().fit_transform(_fill)
 cv_XGB = cross_validate_clean(build_xgb, xgb_options, X_raw[results_XGB['features']], y_raw, _cup, _fill,
-                              select_k=None, n_splits=4, n_repeats=5)
+                              select_k=None, n_splits=4, n_repeats=3)
 cv_Forest = cross_validate_clean(build_randomforest, forest_options, X_raw[results_Forest['features']], y_raw, _cup, _fill,
-                                 select_k=None, n_splits=4, n_repeats=5)
+                                 select_k=None, n_splits=4, n_repeats=3)
 
 graph_cv_comparison({'XGB': cv_XGB, 'Forest': cv_Forest},
                     cv_label="(cup x fill)-stratified 4-fold x5")

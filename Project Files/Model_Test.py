@@ -63,7 +63,7 @@ def get_combined_prediction_results(
     """
     Combines both model probabilities by weighted sum and evaluating
     """
-    probs = XGB_CONST * probs_XGB+ FOREST_CONST * probs_Forest
+    probs = XGB_CONST * probs_XGB + FOREST_CONST * probs_Forest
     results = probs.argmax(axis = 1)
 
     # Convert numeric labels back to original class names
