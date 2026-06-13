@@ -68,7 +68,7 @@ Adding features in ANOVA-rank order shows accuracy climbing steeply and then **p
 
 | XGBoost | RandomForest |
 |---|---|
-| ![XGBoost: accuracy vs number of features](XGBfeatures.png) | ![RandomForest: accuracy vs number of features](Forestfeatures.png) |
+| ![XGBoost: accuracy vs number of features](images/XGBfeatures.png) | ![RandomForest: accuracy vs number of features](images/Forestfeatures.png) |
 
 ---
 
