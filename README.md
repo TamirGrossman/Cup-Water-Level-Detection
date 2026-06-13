@@ -78,7 +78,7 @@ Adding features in ANOVA-rank order shows accuracy climbing steeply and then **p
 
 Stratified 4-fold CV — mean score per metric (left) and the per-fold accuracy spread (right). RandomForest edges ahead on the mean, but both models sit comfortably in the high-0.9s and the fold-to-fold variation is small.
 
-![Stratified 4-fold CV comparison](KfoldCompare1.png)
+![Stratified 4-fold CV comparison](images/KfoldCompare1.png)
 
 ### Fill-level classification — *same cups seen in training*
 
@@ -98,7 +98,7 @@ On a single held-out 20 % split, XGBoost makes exactly one off-by-one error (an 
 
 | XGBoost | RandomForest | Ensemble |
 |---|---|---|
-| ![XGBoost confusion matrix](XGBoostCM.png) | ![RandomForest confusion matrix](TreeCM.png) | ![Combined ensemble confusion matrix](combinedCM.png) |
+| ![XGBoost confusion matrix](images/XGBoostCM.png) | ![RandomForest confusion matrix](images/TreeCM.png) | ![Combined ensemble confusion matrix](images/combinedCM.png) |
 
 Combined-model classification report:
 
