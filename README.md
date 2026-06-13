@@ -77,7 +77,7 @@ Adding features in ANOVA-rank order shows accuracy climbing steeply and then **p
 
 ### Cross-validation: XGBoost vs RandomForest
 
-Stratified 4-fold CV — mean score per metric (left) and the per-fold accuracy spread (right). RandomForest edges ahead on the mean, but both models sit comfortably in the high-0.9s and the fold-to-fold variation is small.
+Stratified 4-fold CV — mean score per metric (left) and the per-fold accuracy spread (right). RandomForest edges ahead on every metric (≈0.977 vs ≈0.973 accuracy), but both models sit in the high-0.9s; the per-fold view shows one harder fold (~0.95) pulling against otherwise near-perfect folds.
 
 ![Stratified 4-fold CV comparison](images/KfoldCompare1.png)
 
@@ -86,28 +86,28 @@ Stratified 4-fold CV — mean score per metric (left) and the per-fold accuracy 
 Leak-free repeated stratified k-fold CV (4 folds × 5 repeats):
 
 | Model | Accuracy | Adjacent acc. |
-|---|---|---|---|
+|---|---|---|
 | XGBoost | 0.959 ± 0.027 | **1.000** |
-| RandomForest | **0.974 ± 0.021** | **1.000** | 
-| Ensemble (50/50) | 0.969 ± 0.025 | **1.000** | 
+| RandomForest | **0.974 ± 0.021** | **1.000** |
+| Ensemble (50/50) | 0.969 ± 0.025 | **1.000** |
 
-➡️ ~**96–97 % exact accuracy**, and **every single error is off by at most one fill level** — the model is never badly wrong.
+➡️ ~**97 % exact accuracy**, and **every single error is off by at most one fill level** — the model is never badly wrong.
 
-#### Confusion matrices (held-out test split, 45 samples)
+#### Confusion matrices (held-out test split, 57 samples)
 
-On a single held-out 20 % split, XGBoost makes exactly one off-by-one error (an 80 % pour read as 100 %); RandomForest and the ensemble are perfect on this split.
+On the held-out test split, each model makes exactly **one** off-by-one error: XGBoost reads a single 100 % pour as 80 %, while RandomForest and the ensemble each read a single 60 % pour as 80 %. Every other sample is classified exactly right.
 
 | XGBoost | RandomForest | Ensemble |
 |---|---|---|
 | ![XGBoost confusion matrix](images/XGBoostCM.png) | ![RandomForest confusion matrix](images/TreeCM.png) | ![Combined ensemble confusion matrix](images/combinedCM.png) |
 
-Combined-model classification report:
+Combined-model classification report — **0.98 accuracy** across the 57 test samples, with the only dip at the 60 / 80 boundary (the one 60 % → 80 % miss):
 
 ![Combined classification report](images/CombinedReport.png)
 
 ### Flow-rate regression (mL/s)
 
-A regressor (best of XGBoost / RandomForest by CV R²) predicts the continuous flow rate directly from the audio. Left: mean true vs predicted rate per fill class. Right: per-sample predicted vs true, colored by cup, against the `y = x` perfect-agreement line.
+A regressor (best of XGBoost / RandomForest by CV R²) predicts the continuous flow rate directly from the audio. Left: mean true vs predicted rate per fill class — the two bars track each other to within ~1–1.5 mL/s at every level. Right: per-sample predicted vs true, colored by cup, against the `y = x` perfect-agreement line.
 
 ![Flow-rate regression results](images/flow_rate.png)
 
@@ -124,7 +124,7 @@ A regressor (best of XGBoost / RandomForest by CV R²) predicts the continuous f
 
 ## 💡 Conclusions & Insights
 
-- **The acoustic signal is real and strong.** Fill level is recoverable from sound with ~96–97 % accuracy on seen cups, and the rising-pitch physics shows up clearly in the spectral features.
+- **The acoustic signal is real and strong.** Fill level is recoverable from sound with ~97 % accuracy on seen cups, and the rising-pitch physics shows up clearly in the spectral features.
 - **Errors respect the ordering.** Across every experiment, mistakes are almost always neighbours (±1 level). This is exactly the failure mode you want for a "nearly full → stop" application.
 - **Generalizing to a new cup is the real challenge.** A random split flatters the model because each cup has its own acoustic fingerprint; the leave-one-cup-out test reveals that exact-level prediction on an unseen cup is much harder. *More importantly, this means the honest evaluation is leave-one-cup-out, not a random split.*
 - **Sound beats arithmetic for flow rate.** A model trained directly on the audio predicts flow rate well even without being told the pour duration — evidence the sound itself encodes the rate.
