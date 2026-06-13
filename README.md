@@ -84,11 +84,11 @@ Stratified 4-fold CV — mean score per metric (left) and the per-fold accuracy 
 
 Leak-free repeated stratified k-fold CV (4 folds × 5 repeats):
 
-| Model | Accuracy | Adjacent acc. | Quadratic κ |
+| Model | Accuracy | Adjacent acc. |
 |---|---|---|---|
-| XGBoost | 0.959 ± 0.027 | **1.000** | 0.990 |
-| RandomForest | **0.974 ± 0.021** | **1.000** | 0.994 |
-| Ensemble (50/50) | 0.969 ± 0.025 | **1.000** | — |
+| XGBoost | 0.959 ± 0.027 | **1.000** |
+| RandomForest | **0.974 ± 0.021** | **1.000** | 
+| Ensemble (50/50) | 0.969 ± 0.025 | **1.000** | 
 
 ➡️ ~**96–97 % exact accuracy**, and **every single error is off by at most one fill level** — the model is never badly wrong.
 
