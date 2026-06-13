@@ -53,21 +53,36 @@ A clean, classical-ML pipeline, kept honest at every step:
 
 1. **Feature ranking** — ANOVA F-scores to see which acoustic features separate the fill classes.
 2. **Feature selection** — wrapper selection (forward / backward) and filter selection (`SelectKBest`), evaluated *inside* cross-validation so no fold ever sees its own test rows during preprocessing.
-3. **Models** — `XGBoost` and `RandomForest`, plus a **50/50 probability-averaging ensemble**.
+3. **Models** — `XGBoost` and `RandomForest`, plus a **probability-averaging ensemble**.
 4. **Tuning** — `GridSearchCV` over depth, estimators, learning rate, subsampling — on the **training split only**.
-5. **Validation** — repeated **stratified k-fold cross-validation**, with leakage-free preprocessing baked into each fold (`Cross_Validation_Clean.py`).
+5. **Validation** — repeated **stratified k-fold cross-validation** (4 folds × 5 repeats), with leakage-free preprocessing baked into each fold (`Cross_Validation_Clean.py`).
 
 Because the fill levels are **ordered** (20 < 40 < 60 < 80 < 100), we report ordinal-aware metrics alongside accuracy:
 
 - **Adjacent accuracy** — fraction of predictions within ±1 fill level.
 - **Quadratic-weighted kappa** — penalizes far misses more than near ones.
 
+### How many features do we actually need?
+
+Adding features in ANOVA-rank order shows accuracy climbing steeply and then **plateauing after only ~10–20 features** — the acoustic signal is concentrated in a handful of descriptors, and the long tail adds little. This is what justifies trimming the 145-feature set.
+
+| XGBoost | RandomForest |
+|---|---|
+| ![XGBoost: accuracy vs number of features](XGBfeatures.png) | ![RandomForest: accuracy vs number of features](Forestfeatures.png) |
+
 ---
 
 ## 📊 Results
 
+### Cross-validation: XGBoost vs RandomForest
+
+Stratified 4-fold CV — mean score per metric (left) and the per-fold accuracy spread (right). RandomForest edges ahead on the mean, but both models sit comfortably in the high-0.9s and the fold-to-fold variation is small.
+
+![Stratified 4-fold CV comparison](KfoldCompare1.png)
+
 ### Fill-level classification — *same cups seen in training*
-Leak-free repeated stratified 5-fold CV:
+
+Leak-free repeated stratified k-fold CV (4 folds × 5 repeats):
 
 | Model | Accuracy | Adjacent acc. | Quadratic κ |
 |---|---|---|---|
@@ -77,7 +92,20 @@ Leak-free repeated stratified 5-fold CV:
 
 ➡️ ~**96–97 % exact accuracy**, and **every single error is off by at most one fill level** — the model is never badly wrong.
 
+#### Confusion matrices (held-out test split, 45 samples)
+
+On a single held-out 20 % split, XGBoost makes exactly one off-by-one error (an 80 % pour read as 100 %); RandomForest and the ensemble are perfect on this split.
+
+| XGBoost | RandomForest | Ensemble |
+|---|---|---|
+| ![XGBoost confusion matrix](XGBoostCM.png) | ![RandomForest confusion matrix](TreeCM.png) | ![Combined ensemble confusion matrix](combinedCM.png) |
+
+Combined-model classification report:
+
+![Combined classification report](CombinedReport.png)
+
 ### Fill-level classification — *brand-new, unseen cup* (leave-one-cup-out)
+
 The harder, more honest test: train on 2 cups, predict the 3rd cup the model has **never heard**.
 
 | Held-out cup | Exact accuracy | Adjacent accuracy |
@@ -88,14 +116,20 @@ The harder, more honest test: train on 2 cups, predict the 3rd cup the model has
 
 ➡️ Exact accuracy drops on a fully unseen cup, **but adjacent accuracy stays ~0.99–1.00** — predictions remain within one fill bucket even when the cup is new.
 
-### Flow-rate regression (mL/s) — 5-fold CV R²
+### Flow-rate regression (mL/s)
+
+A regressor (best of XGBoost / RandomForest by CV R²) predicts the continuous flow rate directly from the audio. Left: mean true vs predicted rate per fill class. Right: per-sample predicted vs true, colored by cup, against the `y = x` perfect-agreement line.
+
+![Flow-rate regression results](flow_rate.png)
+
+5-fold CV R²:
 
 | Feature set | XGBoost | RandomForest |
 |---|---|---|
 | Sound **+ duration** | **0.846** | 0.784 |
 | Sound **only** (no duration) | 0.834 | 0.778 |
 
-➡️ Removing pour duration barely changes the score (0.846 → 0.834): **the pouring sound alone carries the flow-rate information.**
+➡️ Removing pour duration barely changes the score (0.846 → 0.834): **the pouring sound alone carries the flow-rate information.** The scatter shows the model tracks the rate well across cups, with the largest cup (Cup 3, fastest pours) slightly under-predicted at the high end.
 
 ---
 
