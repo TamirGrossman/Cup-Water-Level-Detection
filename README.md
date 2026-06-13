@@ -4,6 +4,7 @@
 
 When you pour water into a cup, the pitch rises as the cup fills: the air column above the water shortens and resonates higher. This project turns that everyday acoustic cue into a measurable signal and asks a machine-learning model to read it.
 
+* This project is by : Tamir Grossman, Amit Nigerker, Or Bastaker and Yuval Holoidovsky
 ---
 
 ## 🎯 Concept
