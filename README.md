@@ -102,7 +102,7 @@ On a single held-out 20 % split, XGBoost makes exactly one off-by-one error (an 
 
 Combined-model classification report:
 
-![Combined classification report](CombinedReport.png)
+![Combined classification report](images/CombinedReport.png)
 
 ### Fill-level classification — *brand-new, unseen cup* (leave-one-cup-out)
 
