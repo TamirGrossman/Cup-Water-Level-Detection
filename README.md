@@ -104,18 +104,6 @@ Combined-model classification report:
 
 ![Combined classification report](images/CombinedReport.png)
 
-### Fill-level classification — *brand-new, unseen cup* (leave-one-cup-out)
-
-The harder, more honest test: train on 2 cups, predict the 3rd cup the model has **never heard**.
-
-| Held-out cup | Exact accuracy | Adjacent accuracy |
-|---|---|---|
-| Cup 1 (300 mL) | 0.827 | 1.000 |
-| Cup 2 (350 mL) | 0.467 | 1.000 |
-| Cup 3 (400 mL) | 0.573 | 0.987 |
-
-➡️ Exact accuracy drops on a fully unseen cup, **but adjacent accuracy stays ~0.99–1.00** — predictions remain within one fill bucket even when the cup is new.
-
 ### Flow-rate regression (mL/s)
 
 A regressor (best of XGBoost / RandomForest by CV R²) predicts the continuous flow rate directly from the audio. Left: mean true vs predicted rate per fill class. Right: per-sample predicted vs true, colored by cup, against the `y = x` perfect-agreement line.
