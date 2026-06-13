@@ -39,23 +39,6 @@ def model_pipeline(
 ) -> dict[str, Any]:
 
     model_options = model_params.copy() # copy of model_params to keep original the same after hyperparameter tunning
-    X_selected = X.copy()
-
-    # Forward feature selection
-    selected_indices: list[int] | None = None
-    selected_features = features
-    if use_feature_selection:
-        selected_indices, selected_features, _ = forward_feature_selection(
-            X_selected,
-            y,
-            features,
-            model_params,
-            build_model,
-            max_features= max_features,
-            cv=cv,
-            initial_features= anova_results['feature'].head(n_initial).tolist()
-        )
-        X_selected = X.iloc[:, selected_indices]
 
     model = build_model(**model_params, random_state= random_state)
     
@@ -66,14 +49,38 @@ def model_pipeline(
         model,
         anova_results['feature'].tolist(), features)
 
+    #Split to train,test (index-aware so test rows can be mapped back to the CSV)
+    if not split_by_cup:
+        X_train, X_test, y_train, y_test = split_data(X, y_encoded, test_size=0.2)
+    else:
+        X_train, X_test, y_train, y_test = split_data_by_cup(X, y_encoded, cup_labels, cup_number=cup_number)
+
+    # Forward feature selection
+    selected_indices: list[int] | None = None
+    selected_features = features
+    if use_feature_selection:
+        selected_indices, selected_features, _ = forward_feature_selection(
+            X_train,
+            y_train,
+            features,
+            model_params,
+            build_model,
+            max_features= max_features,
+            cv=cv,
+            initial_features= anova_results['feature'].head(n_initial).tolist()
+        )
+        X_train = X_train.iloc[:, selected_indices]
+        X_test = X_test.iloc[:, selected_indices]
+
     best_params: dict[str, int | float] | None = None
     best_tune_score: float | None = None
     if tune:
         best_params, best_tune_score = tune_hyperparameters(
             model,
-            X_selected,
-            y,
+            X_train[selected_features],
+            y_train,
             param_grid=tune_grid,
+            n_iters=100,
             cv=tune_cv,
         )
         model_options.update(best_params)
@@ -85,19 +92,12 @@ def model_pipeline(
     if run_cross_validation:
         cv_results = cross_validate_model(
             model,
-            X,
+            X[selected_features],
             y,
             cv=cv,
         )
 
-
-    #Split to train,test (index-aware so test rows can be mapped back to the CSV)
-    if not split_by_cup:
-        X_train, X_test, y_train, y_test = split_data(X[X_selected.columns], y_encoded, test_size=0.2)
-    else:
-        X_train, X_test, y_train, y_test = split_data_by_cup(X, y_encoded, cup_labels, cup_number=cup_number)
-    
-    X_train_scaled, X_test_scaled, _ = scale_features(X_train, X_test)
+    X_train_scaled, X_test_scaled, _ = scale_features(X_train, X_test) 
 
     # Train XGBoost model
     model = train_classifier(
@@ -148,23 +148,24 @@ xgb_options = {
     'n_estimators': 200,
     'learning_rate': 0.05,
     'max_depth': 6,
-    'subsample': 0.4,
-    'colsample_bytree': 0.6,
+    'subsample': 0.3,
+    'colsample_bytree': 0.67,
     'objective': 'multi:softprob',
-    'n_jobs': 5,
+    'n_jobs': -1,
     'verbosity': 0,
-    'reg_alpha': 0.5,
-    'reg_lambda': 0.3
+    'reg_alpha': 0.6,
+    'reg_lambda': 0.4
 }
 
 xgb_tune_grid = {
-            'n_estimators':  [200, 300, 400],
-            'max_depth':     [4, 6, 8],
-            'learning_rate': [0.05, 0.01],
-            'subsample': [0.2, 0.4, 0.6],
+            'n_estimators':  [100, 200, 300, 400],
+            'learning_rate': [0.01, 0.05, 0.1],
+            'max_depth':     [3, 6, 8],
+            'min_child_weight': [1, 3, 5],
+            'subsample': [0.2, 0.6, 0.7, 0.85, 1.0],
             'colsample_bytree': [0.3, 0.5, 0.7],
-            # 'reg_alpha': [0.3, 0.5, 0.7],
-            # 'reg_lambda': [0.1, 0.3, 0.5]
+            'reg_alpha': [0, 0.01, 0.1, 1, 10, 50, 100],
+            'reg_lambda': [0.1, 0.3, 0.5, 0.7, 1.0, 1.3]
         }
 
 print('='*60)
@@ -174,13 +175,13 @@ results_XGB = model_pipeline(
     X, y_encoded, features, anova_results,
     xgb_options, build_xgb, model_type= "XGB",
     random_state= 42,
-    use_feature_selection= True, max_features=100, n_initial=21,
+    use_feature_selection= True, max_features=140, n_initial=69
     run_cross_validation = True, cv = 4,
     tune = True, tune_grid= xgb_tune_grid, tune_cv= 4,
     feature_impact_graph= False
     )
 # best results: Tune off, FFS on (10 initials) 
-graph_CM(results_XGB['confusion_matrix'], encoder.classes_.astype('str'))
+graph_CM(results_XGB['confusion_matrix'], encoder.classes_.astype('str'), 'XGBoost')
 
 forest_options = {
     "n_estimators": 200,
@@ -203,7 +204,7 @@ forest_options = {
 }
 
 forest_tune_grid = {
-    'n_estimators': [100, 200, 300],
+    'n_estimators': [100, 200, 300, 400],
     'max_depth':    [6, 8, 10,],
     'max_features': ['sqrt', 'log2'],
 }
@@ -216,13 +217,13 @@ results_Forest = model_pipeline(
     X, y, features, anova_results,
     forest_options, build_randomforest, model_type="FOREST",
     random_state= 42,
-    use_feature_selection= True, max_features=100, n_initial= 10,
+    use_feature_selection= False, max_features=100, n_initial= 11,
     run_cross_validation = True, cv = 4,
-    tune = False, tune_grid= forest_tune_grid, tune_cv= 4,
+    tune = True, tune_grid= forest_tune_grid, tune_cv= 4,
     feature_impact_graph= False
     )
 
-graph_CM(results_Forest['confusion_matrix'], encoder.classes_.astype('str'))
+graph_CM(results_Forest['confusion_matrix'], encoder.classes_.astype('str'), 'RandomForest')
 
 if not split_by_cup:
         X_train, X_test, y_train, y_test, train_idx, test_idx = split_data_with_indices(X, y_encoded, test_size=0.2)
@@ -236,12 +237,14 @@ print('\n')
 print('='*60)
 print("Combined")
 print('='*60)
-XGB_CONST = 0.5
-FORSET_CONST = 0.5
+XGB_CONST = 0.4
+FORSET_CONST = 0.6
 final_results = get_combined_prediction_results(
     XGB_CONST, results_XGB['probablities'], 
     FORSET_CONST, results_Forest['probablities'], 
     y_test, encoder)
+
+graph_CM(final_results['confusion_matrix'],encoder.classes_.astype('str'), 'Combined')
 
 graph_cv_comparison(
     {
@@ -260,29 +263,29 @@ X_raw = _df.drop(columns=[_lk['fill'], _lk['cup'], _lk['duration_s']])
 X_raw = X_raw.drop(columns=X_raw.columns[X_raw.nunique() < 2])
 y_raw = LabelEncoder().fit_transform(_fill)
 cv_XGB = cross_validate_clean(build_xgb, xgb_options, X_raw[results_XGB['features']], y_raw, _cup, _fill,
-                              select_k=50, n_splits=4, n_repeats=5)
+                              select_k=None, n_splits=4, n_repeats=5)
 cv_Forest = cross_validate_clean(build_randomforest, forest_options, X_raw[results_Forest['features']], y_raw, _cup, _fill,
-                                 select_k=50, n_splits=4, n_repeats=5)
+                                 select_k=None, n_splits=4, n_repeats=5)
 
 graph_cv_comparison({'XGB': cv_XGB, 'Forest': cv_Forest},
                     cv_label="(cup x fill)-stratified 4-fold x5")
 
 
-# # --- Flow rate by REGRESSION: train + tune XGB and RandomForest regressors on
-# #     the same test split, pick whichever model+hyperparameters fit best (CV),
-# #     and predict the flow rate directly. (No longer derived from the fill
-# #     classifier or a formula.) ---
-# #Split to train,test (index-aware so test rows can be mapped back to the CSV)
-# flow_results = compute_flow_rates(
-#     CSV_PATH,
-#     test_indices=test_idx,
-#     tune=True,
-#     cv=4,
-#     random_state=42,
-# )
-# print(f"Flow-rate model chosen: {flow_results['best_model']} "
-#       f"(params={flow_results['best_params']}, "
-#       f"test R2={flow_results['metrics']['R2']:.4f})")
+# --- Flow rate by REGRESSION: train + tune XGB and RandomForest regressors on
+#     the same test split, pick whichever model+hyperparameters fit best (CV),
+#     and predict the flow rate directly. (No longer derived from the fill
+#     classifier or a formula.) ---
+#Split to train,test (index-aware so test rows can be mapped back to the CSV)
+flow_results = compute_flow_rates(
+    CSV_PATH,
+    test_indices=test_idx,
+    tune=True,
+    cv=4,
+    random_state=42,
+)
+print(f"Flow-rate model chosen: {flow_results['best_model']} "
+      f"(params={flow_results['best_params']}, "
+      f"test R2={flow_results['metrics']['R2']:.4f})")
 
-# # Flow rate figures: bars (true vs predicted by fill class) + per-sample scatter.
-# graph_flow_rate(flow_results)
+# Flow rate figures: bars (true vs predicted by fill class) + per-sample scatter.
+graph_flow_rate(flow_results)

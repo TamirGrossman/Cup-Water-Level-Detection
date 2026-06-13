@@ -72,7 +72,7 @@ def plot_feature_impact(X, y, model, top_features, feature_names):
     k_results = []
     for feat in top_features:
         features_idx.append(feature_names.index(feat))
-        X_curr = X[:, features_idx]
+        X_curr = X.iloc[:, features_idx]
         temp, _ = kfold_cv_multiple(model, X_curr, y, k= 4)
         k_results.append(temp['accuracy']['mean'])
     
@@ -228,7 +228,7 @@ def graph_cv_comparison(
     plt.show()
 
 
-def graph_CM(cm, class_names):
+def graph_CM(cm, class_names, model_type):
     # graph confusion matrix
     plt.figure(figsize=(8, 6))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', cbar=False,
@@ -236,7 +236,7 @@ def graph_CM(cm, class_names):
                 yticklabels=class_names)
     plt.xlabel('Predicted Label', fontsize=12)
     plt.ylabel('True Label', fontsize=12)
-    plt.title('Confusion Matrix - KFold', fontsize=14)
+    plt.title(f'{model_type} Confusion Matrix - KFold', fontsize=14)
     plt.tight_layout()
     plt.show()
 

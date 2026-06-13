@@ -5,7 +5,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 import xgboost as xgb
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import cross_val_score, StratifiedKFold, GridSearchCV
+from sklearn.model_selection import cross_val_score, StratifiedKFold, GridSearchCV, RandomizedSearchCV
 
 def build_xgb(
     n_estimators: int = 100,
@@ -15,6 +15,7 @@ def build_xgb(
     num_class: int | None = 5,
     verbosity: int = 0,
     subsample: float =0.4,
+    min_child_weight: int =  1,
     colsample_bytree: float = 0.55,
     objective: str = 'multi:softprob',
     n_jobs: int =5,
@@ -53,6 +54,7 @@ def build_xgb(
         objective= objective,
         random_state=random_state,
         n_jobs=n_jobs,
+        min_child_weight = min_child_weight,
         verbosity=verbosity,
         reg_alpha = reg_alpha,
         reg_lambda = reg_lambda,
@@ -381,7 +383,7 @@ def tune_hyperparameters(
     cv: int = 5,
     scoring: str = 'accuracy',
     random_state: int = 42,
-    #num_class: int | None = None,
+    n_iters: int = 100,
     verbose: bool = True,
 ) -> tuple[dict[str, int | float], float]:
     """
@@ -453,13 +455,14 @@ def tune_hyperparameters(
         for key, values in param_grid.items()
     }
 
-    search = GridSearchCV(
+    search = RandomizedSearchCV(
         estimator=pipe,
-        param_grid=pipe_param_grid,
+        param_distributions=pipe_param_grid,
         scoring=scoring,
         cv=cv_splitter,
-        n_jobs=-1,
-        refit=False,  # we refit the final model ourselves downstream
+        n_iter= n_iters,
+        n_jobs= 3,
+        random_state=random_state
     )
     search.fit(X, y)
 
