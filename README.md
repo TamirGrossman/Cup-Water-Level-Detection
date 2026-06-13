@@ -8,7 +8,7 @@ When you pour water into a cup, the pitch rises as the cup fills: the air column
 
 ## 🎯 Concept
 
-A water bar fills cups by hand. As a cup fills, the pouring sound changes in a consistent, physically-grounded way. The goal of this project is a **proof-of-concept** that this change can be decoded automatically:
+A water bar fills the cups . As a cup fills, the pouring sound changes in a consistent, physically-grounded way. The goal of this project is a **proof-of-concept** that this change can be decoded automatically:
 
 1. **Fill-level classification** — given a recording of a pour, predict the fill level (20 / 40 / 60 / 80 / 100 %).
 2. **Flow-rate regression** — predict the continuous pouring rate in **mL/s** directly from the sound.
